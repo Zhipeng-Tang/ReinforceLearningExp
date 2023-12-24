@@ -3,3 +3,4 @@
 __pycache__/
 *.zip
 RL-exp2/src/log/
+RL-exp2/src/*.log
