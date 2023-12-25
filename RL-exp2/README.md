@@ -11,8 +11,6 @@
   git clone https://github.com/Farama-Foundation/Gymnasium.git
   cd Gymnasium
   python setup.py develop
-  cd ..
-  rm -rf Gymnasium
   ```
 - install torch: 
   ```bash
