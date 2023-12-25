@@ -7,3 +7,4 @@ RL-exp2/src/*.log
 RL-exp2/src/csv/
 RL-exp2/src/*.png
 RL-exp2/src/plot.py
+Gymnasium/
