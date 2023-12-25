@@ -10,33 +10,53 @@ import collections
 import argparse
 
 parser = argparse.ArgumentParser(description='DQN')
-parser.add_argument('-m', '--mode', type=str, default='normal', help='normal or double dqn')
 parser.add_argument('-e', '--env', type=str, default='CartPole-v1', help='which enviroment, CartPole-v1 or MountainCar-v0')
-parser.add_argument('-d', '--dueling', action='store_true', help='dueling or not dueling')
-parser.add_argument('-t', '--test', action='store_true', help='test or train')
+parser.add_argument('-t', '--test', action='store_true', help='test or not test(train)')
+parser.add_argument('--double', action='store_true', help='double or not double')
+parser.add_argument('--dueling', action='store_true', help='dueling or not dueling')
+parser.add_argument('--logdir', type=str, default='./log', help='dir of log')
+parser.add_argument('--lr', type=float, default=0.00025, help='learning rate')
+parser.add_argument('--epsilon_start', type=float, default=0.5, help='epsilon starting')
 args = parser.parse_args()
-assert args.mode in ['normal', 'double'], '{} DQN does not exist!'.format(args.mode)
 assert args.env in ['CartPole-v1', 'MountainCar-v0'], 'env: {} does not exist!'.format(args.env)
 
 # hyper-parameters
-EPISODES = 2000                 # 训练/测试幕数
-BATCH_SIZE = 64
-LR = 0.00025
-GAMMA = 0.98
-SAVING_IETRATION = 1000         # 保存Checkpoint的间隔
-MEMORY_CAPACITY = 10000         # Memory的容量
-MIN_CAPACITY = 500              # 开始学习的下限
-Q_NETWORK_ITERATION = 10        # 同步target network的间隔
-EPSILON = 0.01                  # epsilon-greedy
-SEED = 0
+if args.env == 'CartPole-v1':
+    EPISODES = 2000                 # 训练/测试幕数
+    BATCH_SIZE = 64
+    LR = args.lr
+    GAMMA = 0.98
+    SAVING_IETRATION = 1000         # 保存Checkpoint的间隔
+    MEMORY_CAPACITY = 10000         # Memory的容量
+    MIN_CAPACITY = 500              # 开始学习的下限
+    Q_NETWORK_ITERATION = 10        # 同步target network的间隔
+    EPSILON = 0.01                  # epsilon-greedy
+    SEED = 0
+    epsilon_start = 0.5
+    epsilon_end = 0
+    epsilon_decay = EPISODES * 0.8
+elif args.env == 'MountainCar-v0':
+    EPISODES = 2000                 # 训练/测试幕数
+    BATCH_SIZE = 64
+    LR = args.lr
+    GAMMA = 0.98
+    SAVING_IETRATION = 1000         # 保存Checkpoint的间隔
+    MEMORY_CAPACITY = 10000         # Memory的容量
+    MIN_CAPACITY = 500              # 开始学习的下限
+    Q_NETWORK_ITERATION = 10        # 同步target network的间隔
+    EPSILON = 0.01                  # epsilon-greedy
+    SEED = 0
+    epsilon_start = args.epsilon_start
+    epsilon_end = 0
+    epsilon_decay = EPISODES * 0.8
 
 TEST = args.test
-if args.mode == 'normal':
-    SAVE_PATH_PREFIX = './log/dqn/{}/'.format(args.env) if not args.dueling else './log/dueling_dqn/{}/'.format(args.env)
-    MODEL_PATH = './log/dqn/{}/ckpt/final.pth'.format(args.env) if not args.dueling else './log/dueling_dqn/{}/ckpt/final.pth'.format(args.env)
+if not args.double:
+    SAVE_PATH_PREFIX = '{}/{}/dqn/'.format(args.logdir, args.env) if not args.dueling else '{}/{}/dueling_dqn/'.format(args.logdir, args.env)
+    MODEL_PATH = '{}/{}/dqn/ckpt/final.pth'.format(args.logdir, args.env) if not args.dueling else '{}/{}/dueling_dqn/ckpt/final.pth'.format(args.logdir, args.env)
 else:
-    SAVE_PATH_PREFIX = './log/double_dqn/{}/'.format(args.env) if not args.dueling else './log/double_dueling_dqn/{}/'.format(args.env)
-    MODEL_PATH = './log/double_dqn/{}/ckpt/final.pth'.format(args.env) if not args.dueling else './log/double_dueling_dqn/{}/ckpt/final.pth'.format(args.env)
+    SAVE_PATH_PREFIX = '{}/{}/double_dqn/'.format(args.logdir, args.env) if not args.dueling else '{}/{}/double_dueling_dqn/'.format(args.logdir, args.env)
+    MODEL_PATH = '{}/{}/double_dqn/ckpt/final.pth'.format(args.logdir, args.env) if not args.dueling else '{}/{}/double_dueling_dqn/ckpt/final.pth'.format(args.logdir, args.env)
 
 
 env = gym.make(args.env, render_mode="human" if TEST else None)
@@ -98,8 +118,6 @@ class Memory:
 
     def set(self, data, index):
         # TODO
-        # position = np.random.randint(0, len(self.buffer) + 1)
-        # self.buffer.insert(position, data)
         if len(self.buffer) < MEMORY_CAPACITY:
             self.buffer.append(data)
         else:
@@ -107,17 +125,16 @@ class Memory:
     
     def get(self, batch_size):
         # TODO
-        # batch = []
-        # for _ in range(batch_size):
-        #     batch.append(self.buffer.pop())
-        # return batch
         batch = random.sample(self.buffer, batch_size)
         return batch
 
 
 class DQN():
     """docstring for DQN"""
-    def __init__(self):
+    def __init__(self, is_double=False):
+        '''
+        is_double: double DQN or not
+        '''
         super(DQN, self).__init__()
         self.generate_net()
         self.learn_step_counter = 0
@@ -125,6 +142,7 @@ class DQN():
         self.memory = Memory(capacity=MEMORY_CAPACITY)
         self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=LR)
         self.loss_func = nn.MSELoss()
+        self.is_double = is_double
     
     def generate_net(self):
         self.eval_net, self.target_net = DQNModel().to(device), DQNModel().to(device)
@@ -176,15 +194,14 @@ class DQN():
         next_action_values: torch.Tensor = self.calc_target_action_values(next_states)
 
         choices = curr_action_values.gather(1, curr_actions.view(BATCH_SIZE,1)).view(BATCH_SIZE)
-        if args.mode == 'normal':
+        if not self.is_double:
             targets = reward + torch.max(next_action_values,dim=1).values * GAMMA * (1- dones)
-        elif args.mode == 'double':
+        else:
             next_action_values_using_evalnet = self.calc_eval_action_values(next_states)
             targets = reward + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(BATCH_SIZE, 1)).view(BATCH_SIZE) * GAMMA * (1- dones)
 
         loss = self.loss_func(choices, targets)
         
-        # import pdb; pdb.set_trace()
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -216,9 +233,9 @@ class DuelingDQN(DQN):
 
 def main():
     if args.dueling:
-        dqn = DuelingDQN()
+        dqn = DuelingDQN(args.double)
     else:
-        dqn = DQN()
+        dqn = DQN(args.double)
     
     writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
 
@@ -229,6 +246,7 @@ def main():
         state, info = env.reset(seed=SEED)
 
         ep_reward = 0
+        EPSILON = epsilon_end + (epsilon_start - epsilon_end) * (1 - (i + 1) / epsilon_decay)
         while True:
             action = dqn.choose_action(state=state, EPSILON=EPSILON if not TEST else 0)  # choose best action
             next_state, reward, done, truncated, info = env.step(action)  # observe next state and reward
