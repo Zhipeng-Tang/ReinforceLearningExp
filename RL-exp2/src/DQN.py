@@ -215,8 +215,8 @@ class DQN():
 
 class DuelingDQN(DQN):
     """docstring for DuelingDQN"""
-    def __init__(self):
-        super(DuelingDQN, self).__init__()
+    def __init__(self, is_double=False):
+        super(DuelingDQN, self).__init__(is_double)
 
     def generate_net(self):
         self.eval_net, self.target_net = DuelingDQNModel().to(device), DuelingDQNModel().to(device)
