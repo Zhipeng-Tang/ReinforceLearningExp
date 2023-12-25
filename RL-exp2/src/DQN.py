@@ -11,14 +11,16 @@ import argparse
 
 parser = argparse.ArgumentParser(description='DQN')
 parser.add_argument('-e', '--env', type=str, default='CartPole-v1', help='which enviroment, CartPole-v1 or MountainCar-v0')
+parser.add_argument('-m', '--mode', type=str, default='dqn', help='dqn, dueling or prioritized_relay')
 parser.add_argument('-t', '--test', action='store_true', help='test or not test(train)')
 parser.add_argument('--double', action='store_true', help='double or not double')
-parser.add_argument('--dueling', action='store_true', help='dueling or not dueling')
 parser.add_argument('--logdir', type=str, default='./log', help='dir of log')
 parser.add_argument('--lr', type=float, default=0.00025, help='learning rate')
 parser.add_argument('--epsilon_start', type=float, default=0.5, help='epsilon starting')
+parser.add_argument('--omega', type=float, default=0.5, help='a hyper-parameter of prioritized relay dqn')
 args = parser.parse_args()
 assert args.env in ['CartPole-v1', 'MountainCar-v0'], 'env: {} does not exist!'.format(args.env)
+assert args.mode in ['dqn', 'dueling', 'prioritized_relay'], 'mode: {} does not exist!'.format(args.mode)
 
 # hyper-parameters
 if args.env == 'CartPole-v1':
@@ -51,12 +53,10 @@ elif args.env == 'MountainCar-v0':
     epsilon_decay = EPISODES * 0.8
 
 TEST = args.test
-if not args.double:
-    SAVE_PATH_PREFIX = '{}/{}/dqn/'.format(args.logdir, args.env) if not args.dueling else '{}/{}/dueling_dqn/'.format(args.logdir, args.env)
-    MODEL_PATH = '{}/{}/dqn/ckpt/final.pth'.format(args.logdir, args.env) if not args.dueling else '{}/{}/dueling_dqn/ckpt/final.pth'.format(args.logdir, args.env)
-else:
-    SAVE_PATH_PREFIX = '{}/{}/double_dqn/'.format(args.logdir, args.env) if not args.dueling else '{}/{}/double_dueling_dqn/'.format(args.logdir, args.env)
-    MODEL_PATH = '{}/{}/double_dqn/ckpt/final.pth'.format(args.logdir, args.env) if not args.dueling else '{}/{}/double_dueling_dqn/ckpt/final.pth'.format(args.logdir, args.env)
+
+dirname = 'double_{}'.format(args.mode) if args.double else args.mode
+SAVE_PATH_PREFIX = '{}/{}/{}/'.format(args.logdir, args.env, dirname)
+MODEL_PATH = '{}/{}/{}/ckpt/final.pth'.format(args.logdir, args.env, dirname)
 
 
 env = gym.make(args.env, render_mode="human" if TEST else None)
@@ -123,9 +123,16 @@ class Memory:
         else:
             self.buffer[index] = data
     
-    def get(self, batch_size):
+    def get(self, batch_size, probability=None):
+        '''
+        Choose batch_size elements from buffer according to probability. \n
+        If probability is not specified, the choices are made with equal probability.
+        '''
         # TODO
-        batch = random.sample(self.buffer, batch_size)
+        if probability is not None:
+            batch = random.choices(self.buffer, probability, k=batch_size)
+        else:
+            batch = random.sample(self.buffer, batch_size)
         return batch
 
 
@@ -171,6 +178,9 @@ class DQN():
         self.memory.set(data, self.memory_counter % MEMORY_CAPACITY)
         self.memory_counter += 1
 
+    def get_batch(self, batch_size):
+        return self.memory.get(batch_size)
+    
     def learn(self):
         # update the parameters
         if self.learn_step_counter % Q_NETWORK_ITERATION ==0:
@@ -183,7 +193,7 @@ class DQN():
         self.learn_step_counter += 1
 
         # TODO
-        batch = self.memory.get(BATCH_SIZE)
+        batch = self.get_batch(BATCH_SIZE)
 
         curr_states = torch.tensor(np.array([data.state for data in batch]), dtype=torch.float).to(device)
         curr_actions = torch.tensor(np.array([data.action for data in batch]), dtype=torch.int64).to(device)
@@ -195,10 +205,10 @@ class DQN():
 
         choices = curr_action_values.gather(1, curr_actions.view(BATCH_SIZE,1)).view(BATCH_SIZE)
         if not self.is_double:
-            targets = reward + torch.max(next_action_values,dim=1).values * GAMMA * (1- dones)
+            targets = reward + torch.max(next_action_values,dim=1).values * GAMMA * (1 - dones)
         else:
             next_action_values_using_evalnet = self.calc_eval_action_values(next_states)
-            targets = reward + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(BATCH_SIZE, 1)).view(BATCH_SIZE) * GAMMA * (1- dones)
+            targets = reward + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(BATCH_SIZE, 1)).view(BATCH_SIZE) * GAMMA * (1 - dones)
 
         loss = self.loss_func(choices, targets)
         
@@ -231,11 +241,38 @@ class DuelingDQN(DQN):
         action_values = V + A - A.mean(dim=-1, keepdim=True)
         return action_values
 
+class PrioritizedRelayDQN(DQN):
+    def __init__(self, omega, is_double=False):
+        '''
+        omega is a hyper-parameter that determines the shape of distribution.
+        '''
+        super(PrioritizedRelayDQN, self).__init__(is_double)
+        self.omega = omega
+    
+    def get_batch(self, batch_size):
+        curr_states = torch.tensor(np.array([data.state for data in self.memory.buffer]), dtype=torch.float).to(device)
+        curr_actions = torch.tensor(np.array([data.action for data in self.memory.buffer]), dtype=torch.int64).to(device)
+        reward = torch.tensor(np.array([data.reward for data in self.memory.buffer]), dtype=torch.float).to(device)
+        next_states = torch.tensor(np.array([data.next_state for data in self.memory.buffer]), dtype=torch.float).to(device)
+        dones = torch.tensor(np.array([data.done for data in self.memory.buffer]), dtype=torch.float).to(device)
+        curr_action_values: torch.Tensor = self.calc_eval_action_values(curr_states)
+        next_action_values: torch.Tensor = self.calc_target_action_values(next_states)
+
+        choices = curr_action_values.gather(1, curr_actions.view(len(self.memory.buffer),1)).view(len(self.memory.buffer))
+        targets = reward + torch.max(next_action_values,dim=1).values * GAMMA * (1- dones)
+
+        probability = torch.float_power(torch.abs(targets - choices), self.omega)
+        probability = (probability / torch.sum(probability)).tolist()
+
+        return self.memory.get(batch_size, probability)
+
 def main():
-    if args.dueling:
-        dqn = DuelingDQN(args.double)
-    else:
+    if args.mode == 'dqn':
         dqn = DQN(args.double)
+    elif args.mode == 'dueling':
+        dqn = DuelingDQN(args.double)
+    elif args.mode == 'prioritized_relay':
+        dqn = PrioritizedRelayDQN(args.omega, args.double)
     
     writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
 
