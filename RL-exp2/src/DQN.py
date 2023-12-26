@@ -14,10 +14,12 @@ parser.add_argument('-e', '--env', type=str, default='CartPole-v1', help='which 
 parser.add_argument('-m', '--mode', type=str, default='dqn', help='dqn, dueling or prioritized_relay')
 parser.add_argument('-t', '--test', action='store_true', help='test or not test(train)')
 parser.add_argument('--double', action='store_true', help='double or not double')
+parser.add_argument('--noisy', action='store_true', help='use noisy-net or not')
 parser.add_argument('--logdir', type=str, default='./log', help='dir of log')
 parser.add_argument('--lr', type=float, default=0.00025, help='learning rate')
 parser.add_argument('--epsilon_start', type=float, default=0.5, help='epsilon starting')
 parser.add_argument('--omega', type=float, default=0.5, help='a hyper-parameter of prioritized relay dqn')
+parser.add_argument('--dynamic_epsilon', action='store_true', help='use dynamic epsilon or not')
 args = parser.parse_args()
 assert args.env in ['CartPole-v1', 'MountainCar-v0'], 'env: {} does not exist!'.format(args.env)
 assert args.mode in ['dqn', 'dueling', 'prioritized_relay'], 'mode: {} does not exist!'.format(args.mode)
@@ -110,15 +112,14 @@ class NoisyLinear(nn.Module):
         return F.linear(x, weight, bias)
 
 class DQNModel(nn.Module):
-    def __init__(self, num_inputs=4, noise=False):
+    def __init__(self, in_features, out_features, is_noisy=False):
         super(DQNModel, self).__init__()
-        self.noise = noise
-        if not self.noise:
-            self.linear1 = nn.Linear(NUM_STATES, 512)
-            self.linear2 = nn.Linear(512, NUM_ACTIONS)
+        if not is_noisy:
+            self.linear1 = nn.Linear(in_features, 512)
+            self.linear2 = nn.Linear(512, out_features)
         else:
-            self.linear1 = NoisyLinear(NUM_STATES, 512)
-            self.linear2 = NoisyLinear(512, NUM_ACTIONS)
+            self.linear1 = NoisyLinear(in_features, 512)
+            self.linear2 = NoisyLinear(512, out_features)
 
     def forward(self, x):
         x = self.linear1(x)
@@ -127,11 +128,16 @@ class DQNModel(nn.Module):
         return x
 
 class DuelingDQNModel(nn.Module):
-    def __init__(self):
+    def __init__(self, in_features, out_features, is_noisy):
         super(DuelingDQNModel, self).__init__()
-        self.linear = nn.Linear(NUM_STATES, 512)
-        self.V = nn.Linear(512, 1)
-        self.A = nn.Linear(512, NUM_ACTIONS)
+        if not is_noisy:
+            self.linear = nn.Linear(in_features, 512)
+            self.V = nn.Linear(512, 1)
+            self.A = nn.Linear(512, out_features)
+        else:
+            self.linear = NoisyLinear(in_features, 512)
+            self.V = NoisyLinear(512, 1)
+            self.A = NoisyLinear(512, out_features)
     
     def forward(self, x):
         x = self.linear(x)
@@ -153,10 +159,11 @@ class Data:
 class Memory:
     def __init__(self, capacity):
         self.buffer = collections.deque(maxlen=capacity)
+        self.capacity = capacity
 
     def set(self, data, index):
         # TODO
-        if len(self.buffer) < MEMORY_CAPACITY:
+        if len(self.buffer) < self.capacity:
             self.buffer.append(data)
         else:
             self.buffer[index] = data
@@ -175,22 +182,49 @@ class Memory:
 
 
 class DQN():
-    """docstring for DQN"""
-    def __init__(self, is_double=False):
+    def __init__(self, 
+                 num_states, 
+                 num_actions, 
+                 env_a_shape, 
+                 is_double=False, 
+                 is_noisy=False,
+                 batch_size=64, 
+                 memory_capacity=10000, 
+                 gamma=0.98, 
+                 q_netwotk_iteration=10, 
+                 saving_iteration=1000):
         '''
+        num_states: number of states
+        num_actions: number of actions
+        env_shape: shape of action space
         is_double: double DQN or not
+        is_noisy: use noisy-net or not
+        batch_size: batch_size
+        memory_capacity: capacity of memory
+        gamma: gamma
+        q_network_iteration: for each q_network_iteration iterations, target_net <- eval_net
+        saving_iteration: for each saving_iteration iterations, save model
         '''
         super(DQN, self).__init__()
-        self.generate_net()
+        self.num_states = num_states
+        self.num_actions = num_actions
         self.learn_step_counter = 0
         self.memory_counter = 0
-        self.memory = Memory(capacity=MEMORY_CAPACITY)
-        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=LR)
+        self.memory = Memory(capacity=memory_capacity)
         self.loss_func = nn.MSELoss()
         self.is_double = is_double
+        self.is_noisy = is_noisy
+        self.batch_size = batch_size
+        self.gamma = gamma
+        self.q_network_iteration=q_netwotk_iteration
+        self.saving_iteration = saving_iteration
+        self.env_a_shape = env_a_shape
+        self.generate_net()
+        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=LR)
     
     def generate_net(self):
-        self.eval_net, self.target_net = DQNModel().to(device), DQNModel().to(device)
+        self.eval_net = DQNModel(self.num_states, self.num_actions, self.is_noisy).to(device)
+        self.target_net = DQNModel(self.num_states, self.num_actions, self.is_noisy).to(device)
 
     def calc_eval_action_values(self, state):
         return self.eval_net.forward(state)
@@ -205,15 +239,15 @@ class DQN():
             with torch.no_grad():
                 action_value = self.calc_eval_action_values(state)
                 action = torch.argmax(action_value).item()
-                action = action if ENV_A_SHAPE ==0 else action.reshape(ENV_A_SHAPE)
+                action = action if self.env_a_shape ==0 else action.reshape(self.env_a_shape)
         else: 
             # random policy
-            action = np.random.randint(0,NUM_ACTIONS)  # int random number
-            action = action if ENV_A_SHAPE ==0 else action.reshape(ENV_A_SHAPE)
+            action = np.random.randint(0,self.num_actions)  # int random number
+            action = action if self.env_a_shape == 0 else action.reshape(self.env_a_shape)
         return action
 
     def store_transition(self, data):
-        self.memory.set(data, self.memory_counter % MEMORY_CAPACITY)
+        self.memory.set(data, self.memory_counter % self.memory.capacity)
         self.memory_counter += 1
 
     def get_batch(self, batch_size):
@@ -221,17 +255,15 @@ class DQN():
     
     def learn(self):
         # update the parameters
-        if self.learn_step_counter % Q_NETWORK_ITERATION ==0:
+        if self.learn_step_counter % self.q_network_iteration ==0:
             self.target_net.load_state_dict(self.eval_net.state_dict())
-        if self.learn_step_counter % SAVING_IETRATION == 0:
+        if self.learn_step_counter % self.saving_iteration == 0:
             self.save_train_model(self.learn_step_counter)
 
-        if self.learn_step_counter % 1000 == 0:
-            print('training step : {}'.format(self.learn_step_counter))
         self.learn_step_counter += 1
 
         # TODO
-        batch = self.get_batch(BATCH_SIZE)
+        batch = self.get_batch(self.batch_size)
 
         curr_states = torch.tensor(np.array([data.state for data in batch]), dtype=torch.float).to(device)
         curr_actions = torch.tensor(np.array([data.action for data in batch]), dtype=torch.int64).to(device)
@@ -241,12 +273,12 @@ class DQN():
         curr_action_values: torch.Tensor = self.calc_eval_action_values(curr_states)
         next_action_values: torch.Tensor = self.calc_target_action_values(next_states)
 
-        choices = curr_action_values.gather(1, curr_actions.view(BATCH_SIZE,1)).view(BATCH_SIZE)
+        choices = curr_action_values.gather(1, curr_actions.view(self.batch_size,1)).view(self.batch_size)
         if not self.is_double:
-            targets = reward + torch.max(next_action_values,dim=1).values * GAMMA * (1 - dones)
+            targets = reward + torch.max(next_action_values,dim=1).values * self.gamma * (1 - dones)
         else:
             next_action_values_using_evalnet = self.calc_eval_action_values(next_states)
-            targets = reward + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(BATCH_SIZE, 1)).view(BATCH_SIZE) * GAMMA * (1 - dones)
+            targets = reward + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(self.batch_size, 1)).view(self.batch_size) * self.gamma * (1 - dones)
 
         loss = self.loss_func(choices, targets)
         
@@ -255,19 +287,38 @@ class DQN():
         self.optimizer.step()
 
     def save_train_model(self, epoch):
-        torch.save(self.eval_net.state_dict(), f"{SAVE_PATH_PREFIX}ckpt/{epoch}.pth")
+        torch.save(self.eval_net.state_dict(), f"{SAVE_PATH_PREFIX}/ckpt/{epoch}.pth")
 
     def load_net(self, file):
         self.eval_net.load_state_dict(torch.load(file))
         self.target_net.load_state_dict(torch.load(file))
 
 class DuelingDQN(DQN):
-    """docstring for DuelingDQN"""
-    def __init__(self, is_double=False):
-        super(DuelingDQN, self).__init__(is_double)
+    def __init__(self, 
+                 num_states, 
+                 num_actions,
+                 env_a_shape, 
+                 is_double=False, 
+                 is_noisy=False,
+                 batch_size=64, 
+                 memory_capacity=10000, 
+                 gamma=0.98, 
+                 q_netwotk_iteration=10, 
+                 saving_iteration=1000):
+        super(DuelingDQN, self).__init__(num_states, 
+                                         num_actions, 
+                                         env_a_shape, 
+                                         is_double, 
+                                         is_noisy, 
+                                         batch_size, 
+                                         memory_capacity, 
+                                         gamma, 
+                                         q_netwotk_iteration, 
+                                         saving_iteration)
 
     def generate_net(self):
-        self.eval_net, self.target_net = DuelingDQNModel().to(device), DuelingDQNModel().to(device)
+        self.eval_net = DuelingDQNModel(self.num_states, self.num_actions, self.is_noisy).to(device)
+        self.target_net = DuelingDQNModel(self.num_states, self.num_actions, self.is_noisy).to(device)
 
     def calc_eval_action_values(self, state):
         V, A = self.eval_net.forward(state)
@@ -280,11 +331,31 @@ class DuelingDQN(DQN):
         return action_values
 
 class PrioritizedRelayDQN(DQN):
-    def __init__(self, omega, is_double=False):
+    def __init__(self, 
+                 num_states, 
+                 num_actions,
+                 env_a_shape,  
+                 omega, 
+                 is_double=False, 
+                 is_noisy=False,
+                 batch_size=64, 
+                 memory_capacity=10000, 
+                 gamma=0.98, 
+                 q_netwotk_iteration=10, 
+                 saving_iteration=1000):
         '''
-        omega is a hyper-parameter that determines the shape of distribution.
+        omega: a hyper-parameter that determines the shape of distribution.
         '''
-        super(PrioritizedRelayDQN, self).__init__(is_double)
+        super(PrioritizedRelayDQN, self).__init__(num_states, 
+                                                  num_actions, 
+                                                  env_a_shape, 
+                                                  is_double, 
+                                                  is_noisy, 
+                                                  batch_size, 
+                                                  memory_capacity, 
+                                                  gamma, 
+                                                  q_netwotk_iteration, 
+                                                  saving_iteration)
         self.omega = omega
     
     def get_batch(self, batch_size):
@@ -297,7 +368,7 @@ class PrioritizedRelayDQN(DQN):
         next_action_values: torch.Tensor = self.calc_target_action_values(next_states)
 
         choices = curr_action_values.gather(1, curr_actions.view(len(self.memory.buffer),1)).view(len(self.memory.buffer))
-        targets = reward + torch.max(next_action_values,dim=1).values * GAMMA * (1- dones)
+        targets = reward + torch.max(next_action_values,dim=1).values * self.gamma * (1- dones)
 
         probability = torch.float_power(torch.abs(targets - choices), self.omega)
         probability = (probability / torch.sum(probability)).tolist()
@@ -306,11 +377,11 @@ class PrioritizedRelayDQN(DQN):
 
 def main():
     if args.mode == 'dqn':
-        dqn = DQN(args.double)
+        dqn = DQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
     elif args.mode == 'dueling':
-        dqn = DuelingDQN(args.double)
+        dqn = DuelingDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
     elif args.mode == 'prioritized_relay':
-        dqn = PrioritizedRelayDQN(args.omega, args.double)
+        dqn = PrioritizedRelayDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.omega, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
     
     writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
 
@@ -321,9 +392,12 @@ def main():
         state, info = env.reset(seed=SEED)
 
         ep_reward = 0
-        EPSILON = epsilon_end + (epsilon_start - epsilon_end) * (1 - (i + 1) / epsilon_decay)
+        if args.dynamic_epsilon:
+            epsilon = epsilon_end + (epsilon_start - epsilon_end) * (1 - (i + 1) / epsilon_decay)
+        else:
+            epsilon = EPSILON
         while True:
-            action = dqn.choose_action(state=state, EPSILON=EPSILON if not TEST else 0)  # choose best action
+            action = dqn.choose_action(state=state, EPSILON=epsilon if not TEST else 0)  # choose best action
             next_state, reward, terminated, truncated, info = env.step(action)  # observe next state and reward
             done = terminated or truncated
             dqn.store_transition(Data(state, action, reward, next_state, done))
