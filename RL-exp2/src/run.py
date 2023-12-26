@@ -10,10 +10,10 @@ args = parser.parse_args()
 assert args.env in ['CartPole-v1', 'MountainCar-v0']
 assert 0 <= args.device <= 7
 
-cmds = ['CUDA_VISIBLE_DEVICES={} python DQN.py -e {} --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),
-        'CUDA_VISIBLE_DEVICES={} python DQN.py -e {} --double --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),
-        'CUDA_VISIBLE_DEVICES={} python DQN.py -e {} --dueling --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),
-        'CUDA_VISIBLE_DEVICES={} python DQN.py -e {} --double --dueling --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),]
+cmds = ['CUDA_VISIBLE_DEVICES={} python DQN.py -e {} -m dqn --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),
+        'CUDA_VISIBLE_DEVICES={} python DQN.py -e {} -m dqn --double --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),
+        'CUDA_VISIBLE_DEVICES={} python DQN.py -e {} -m dueling --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),
+        'CUDA_VISIBLE_DEVICES={} python DQN.py -e {} -m dueling --double --lr {} --epsilon_start {}'.format(args.device, args.env, args.lr, args.epsilon_start),]
 
 for cmd in cmds:
     os.system(cmd)
