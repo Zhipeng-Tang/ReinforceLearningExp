@@ -21,3 +21,8 @@
   ```bash
   pip install tensorboard
   ```
+
+## DQN
+- 结合实验文档看 (RL-exp2/docu/强化学习 Lab 2.pdf)
+- 尝试用神经网络去预测某个状态 state 下 (markov 过程中的状态) 采取每个动作 (action) 能获得的 reward 的期望
+- 先用 gym 库中的环境产生一系列 (state, action, reward, next_state, done) 作为训练数据，然后用 DQN 算法去训练网络
