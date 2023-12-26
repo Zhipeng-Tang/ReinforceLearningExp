@@ -16,13 +16,15 @@ parser.add_argument('-t', '--test', action='store_true', help='test or not test(
 parser.add_argument('--double', action='store_true', help='double or not double')
 parser.add_argument('--noisy', action='store_true', help='use noisy-net or not')
 parser.add_argument('--logdir', type=str, default='./log', help='dir of log')
-parser.add_argument('--lr', type=float, default=0.00025, help='learning rate')
-parser.add_argument('--epsilon_start', type=float, default=0.5, help='epsilon starting')
-parser.add_argument('--omega', type=float, default=0.5, help='a hyper-parameter of prioritized relay dqn')
+parser.add_argument('--lr', type=float, default=0.00025, help='learning rate, default is 0.00025')
+parser.add_argument('--epsilon_start', type=float, default=0.5, help='epsilon starting, default is 0.5')
+parser.add_argument('--omega', type=float, default=0.5, help='a hyper-parameter of prioritized relay dqn, default is 0.5')
 parser.add_argument('--dynamic_epsilon', action='store_true', help='use dynamic epsilon or not')
+parser.add_argument('--multi_step', type=int, default=1, help='how many steps for multi-step learning, default is 1')
 args = parser.parse_args()
 assert args.env in ['CartPole-v1', 'MountainCar-v0'], 'env: {} does not exist!'.format(args.env)
 assert args.mode in ['dqn', 'dueling', 'prioritized_relay'], 'mode: {} does not exist!'.format(args.mode)
+assert args.multi_step >= 1, 'multi_step must be greater than or equal to 1'
 
 # hyper-parameters
 if args.env == 'CartPole-v1':
@@ -58,6 +60,7 @@ TEST = args.test
 
 dirname = 'double_{}'.format(args.mode) if args.double else args.mode
 dirname = 'noisy_{}'.format(dirname) if args.noisy else dirname
+dirname = 'multi_step_{}_{}'.format(args.multi_step, dirname) if args.multi_step > 1 else dirname
 SAVE_PATH_PREFIX = '{}/{}/{}/'.format(args.logdir, args.env, dirname)
 MODEL_PATH = '{}/{}/{}/ckpt/final.pth'.format(args.logdir, args.env, dirname)
 
@@ -187,6 +190,7 @@ class DQN():
                  num_states, 
                  num_actions, 
                  env_a_shape, 
+                 multi_step=1, 
                  is_double=False, 
                  is_noisy=False,
                  batch_size=64, 
@@ -220,6 +224,7 @@ class DQN():
         self.q_network_iteration=q_netwotk_iteration
         self.saving_iteration = saving_iteration
         self.env_a_shape = env_a_shape
+        self.multi_step = multi_step
         self.generate_net()
         self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=LR)
     
@@ -248,7 +253,10 @@ class DQN():
         return action
 
     def store_transition(self, data):
-        self.memory.set(data, self.memory_counter % self.memory.capacity)
+        length = len(data)
+        assert self.multi_step == length, 'multi_step is {}, but the length of data is {}, not match!'.format(self.multi_step, length)
+        reward = np.sum(np.array([d.reward for d in data]) * np.array([self.gamma ** i for i in range(length)]))
+        self.memory.set(Data(data[0].state, data[0].action, reward, data[length-1].next_state, data[length-1].done), self.memory_counter % self.memory.capacity)
         self.memory_counter += 1
 
     def get_batch(self, batch_size):
@@ -268,7 +276,7 @@ class DQN():
 
         curr_states = torch.tensor(np.array([data.state for data in batch]), dtype=torch.float).to(device)
         curr_actions = torch.tensor(np.array([data.action for data in batch]), dtype=torch.int64).to(device)
-        reward = torch.tensor(np.array([data.reward for data in batch]), dtype=torch.float).to(device)
+        rewards = torch.tensor(np.array([data.reward for data in batch]), dtype=torch.float).to(device)
         next_states = torch.tensor(np.array([data.next_state for data in batch]), dtype=torch.float).to(device)
         dones = torch.tensor(np.array([data.done for data in batch]), dtype=torch.float).to(device)
         curr_action_values: torch.Tensor = self.calc_eval_action_values(curr_states)
@@ -276,10 +284,10 @@ class DQN():
 
         choices = curr_action_values.gather(1, curr_actions.view(self.batch_size,1)).view(self.batch_size)
         if not self.is_double:
-            targets = reward + torch.max(next_action_values,dim=1).values * self.gamma * (1 - dones)
+            targets = rewards + torch.max(next_action_values,dim=1).values * (self.gamma ** self.multi_step) * (1 - dones)
         else:
             next_action_values_using_evalnet = self.calc_eval_action_values(next_states)
-            targets = reward + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(self.batch_size, 1)).view(self.batch_size) * self.gamma * (1 - dones)
+            targets = rewards + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(self.batch_size, 1)).view(self.batch_size) * (self.gamma ** self.multi_step) * (1 - dones)
 
         loss = self.loss_func(choices, targets)
         
@@ -299,6 +307,7 @@ class DuelingDQN(DQN):
                  num_states, 
                  num_actions,
                  env_a_shape, 
+                 multi_step=1, 
                  is_double=False, 
                  is_noisy=False,
                  batch_size=64, 
@@ -309,6 +318,7 @@ class DuelingDQN(DQN):
         super(DuelingDQN, self).__init__(num_states, 
                                          num_actions, 
                                          env_a_shape, 
+                                         multi_step, 
                                          is_double, 
                                          is_noisy, 
                                          batch_size, 
@@ -337,6 +347,7 @@ class PrioritizedRelayDQN(DQN):
                  num_actions,
                  env_a_shape,  
                  omega, 
+                 multi_step=1, 
                  is_double=False, 
                  is_noisy=False,
                  batch_size=64, 
@@ -350,6 +361,7 @@ class PrioritizedRelayDQN(DQN):
         super(PrioritizedRelayDQN, self).__init__(num_states, 
                                                   num_actions, 
                                                   env_a_shape, 
+                                                  multi_step, 
                                                   is_double, 
                                                   is_noisy, 
                                                   batch_size, 
@@ -378,11 +390,11 @@ class PrioritizedRelayDQN(DQN):
 
 def main():
     if args.mode == 'dqn':
-        dqn = DQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
+        dqn = DQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.multi_step, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
     elif args.mode == 'dueling':
-        dqn = DuelingDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
+        dqn = DuelingDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.multi_step, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
     elif args.mode == 'prioritized_relay':
-        dqn = PrioritizedRelayDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.omega, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
+        dqn = PrioritizedRelayDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.omega, args.multi_step, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
     
     writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
 
@@ -397,23 +409,41 @@ def main():
             epsilon = epsilon_end + (epsilon_start - epsilon_end) * (1 - (i + 1) / epsilon_decay)
         else:
             epsilon = EPSILON
-        while True:
+        
+        counter = 0
+        data_list = [None for _ in range(args.multi_step)]
+        done = False
+        for _ in range(args.multi_step-1):
             action = dqn.choose_action(state=state, EPSILON=epsilon if not TEST else 0)  # choose best action
             next_state, reward, terminated, truncated, info = env.step(action)  # observe next state and reward
             done = terminated or truncated
-            dqn.store_transition(Data(state, action, reward, next_state, done))
+            data_list[counter % args.multi_step] = Data(state, action, reward, next_state, done)
             ep_reward += reward
-            # if TEST:
-            #     env.render()
-            if dqn.memory_counter >= MIN_CAPACITY and not TEST:
-                dqn.learn()
-                if done:
-                    print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
-            if done:
-                if TEST:
-                    print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
-                break
+            counter += 1
             state = next_state
+            if done:
+                print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
+                break
+        if not done:
+            while True:
+                action = dqn.choose_action(state=state, EPSILON=epsilon if not TEST else 0)  # choose best action
+                next_state, reward, terminated, truncated, info = env.step(action)  # observe next state and reward
+                done = terminated or truncated
+                data_list[counter % args.multi_step] = Data(state, action, reward, next_state, done)
+                counter += 1
+                dqn.store_transition([data_list[i % args.multi_step] for i in range(counter - args.multi_step, counter)])
+                ep_reward += reward
+                state = next_state
+                # if TEST:
+                #     env.render()
+                if dqn.memory_counter >= MIN_CAPACITY and not TEST:
+                    dqn.learn()
+                    if done:
+                        print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
+                if done:
+                    if TEST:
+                        print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
+                    break
         writer.add_scalar('reward', ep_reward, global_step=i)
     if not TEST:
         dqn.save_train_model('final')
