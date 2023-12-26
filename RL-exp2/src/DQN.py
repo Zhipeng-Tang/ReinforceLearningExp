@@ -76,14 +76,52 @@ NUM_ACTIONS = env.action_space.n  # 2
 NUM_STATES = env.observation_space.shape[0]  # 4
 ENV_A_SHAPE = 0 if np.issubdtype(type(env.action_space.sample()), int) else env.action_space.sample().shape  # 0, to confirm the shape
 
-class DQNModel(nn.Module):
-    def __init__(self, num_inputs=4):
-        super(DQNModel, self).__init__()
-        self.linear = nn.Linear(NUM_STATES, 512)
-        self.linear2 = nn.Linear(512, NUM_ACTIONS)
+class NoisyLinear(nn.Module):
+    def __init__(self, in_features, out_features, sigma_init=0.017):
+        super(NoisyLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.sigma_init = sigma_init
+
+        self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.weight_sigma = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.register_buffer('weight_epsilon', torch.Tensor(out_features, in_features))
+
+        self.bias_mu = nn.Parameter(torch.Tensor(out_features))
+        self.bias_sigma = nn.Parameter(torch.Tensor(out_features))
+        self.register_buffer('bias_epsilon', torch.Tensor(out_features))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        mu_range = (3 / self.in_features) ** 0.5
+        self.weight_mu.data.uniform_(-mu_range, mu_range)
+        self.weight_sigma.data.fill_(self.sigma_init / (self.in_features ** 0.5))
+        self.bias_mu.data.uniform_(-mu_range, mu_range)
+        self.bias_sigma.data.fill_(self.sigma_init / (self.out_features ** 0.5))
 
     def forward(self, x):
-        x = self.linear(x)
+        self.weight_epsilon.normal_()
+        self.bias_epsilon.normal_()
+
+        weight = self.weight_mu + self.weight_sigma * self.weight_epsilon
+        bias = self.bias_mu + self.bias_sigma * self.bias_epsilon
+
+        return F.linear(x, weight, bias)
+
+class DQNModel(nn.Module):
+    def __init__(self, num_inputs=4, noise=False):
+        super(DQNModel, self).__init__()
+        self.noise = noise
+        if not self.noise:
+            self.linear1 = nn.Linear(NUM_STATES, 512)
+            self.linear2 = nn.Linear(512, NUM_ACTIONS)
+        else:
+            self.linear1 = NoisyLinear(NUM_STATES, 512)
+            self.linear2 = NoisyLinear(512, NUM_ACTIONS)
+
+    def forward(self, x):
+        x = self.linear1(x)
         x = F.relu(x)
         x = self.linear2(x)
         return x
@@ -286,7 +324,8 @@ def main():
         EPSILON = epsilon_end + (epsilon_start - epsilon_end) * (1 - (i + 1) / epsilon_decay)
         while True:
             action = dqn.choose_action(state=state, EPSILON=EPSILON if not TEST else 0)  # choose best action
-            next_state, reward, done, truncated, info = env.step(action)  # observe next state and reward
+            next_state, reward, terminated, truncated, info = env.step(action)  # observe next state and reward
+            done = terminated or truncated
             dqn.store_transition(Data(state, action, reward, next_state, done))
             ep_reward += reward
             # if TEST:
