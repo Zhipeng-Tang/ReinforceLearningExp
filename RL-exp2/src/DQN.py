@@ -57,6 +57,7 @@ elif args.env == 'MountainCar-v0':
 TEST = args.test
 
 dirname = 'double_{}'.format(args.mode) if args.double else args.mode
+dirname = 'noisy_{}'.format(dirname) if args.noisy else dirname
 SAVE_PATH_PREFIX = '{}/{}/{}/'.format(args.logdir, args.env, dirname)
 MODEL_PATH = '{}/{}/{}/ckpt/final.pth'.format(args.logdir, args.env, dirname)
 
