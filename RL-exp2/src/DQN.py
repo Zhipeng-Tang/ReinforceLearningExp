@@ -233,6 +233,8 @@ class DQN():
         self.loss_func = nn.MSELoss()
         self.is_double = is_double
         self.is_noisy = is_noisy
+        self.is_prioritized = is_prioritized
+        self.omega = omega
         self.batch_size = batch_size
         self.gamma = gamma
         self.q_network_iteration=q_netwotk_iteration
