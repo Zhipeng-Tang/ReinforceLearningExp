@@ -11,7 +11,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description='DQN')
 parser.add_argument('-e', '--env', type=str, default='CartPole-v1', help='which enviroment, CartPole-v1 or MountainCar-v0')
-parser.add_argument('-m', '--mode', type=str, default='dqn', help='dqn, dueling or prioritized_relay')
+parser.add_argument('-m', '--mode', type=str, default='dqn', help='dqn, dueling, prioritized_relay or categorical')
 parser.add_argument('-t', '--test', action='store_true', help='test or not test(train)')
 parser.add_argument('--double', action='store_true', help='double or not double')
 parser.add_argument('--noisy', action='store_true', help='use noisy-net or not')
@@ -23,7 +23,7 @@ parser.add_argument('--dynamic_epsilon', action='store_true', help='use dynamic 
 parser.add_argument('--multi_step', type=int, default=1, help='how many steps for multi-step learning, default is 1')
 args = parser.parse_args()
 assert args.env in ['CartPole-v1', 'MountainCar-v0'], 'env: {} does not exist!'.format(args.env)
-assert args.mode in ['dqn', 'dueling', 'prioritized_relay'], 'mode: {} does not exist!'.format(args.mode)
+assert args.mode in ['dqn', 'dueling', 'prioritized_relay', 'categorical'], 'mode: {} does not exist!'.format(args.mode)
 assert args.multi_step >= 1, 'multi_step must be greater than or equal to 1'
 
 # hyper-parameters
@@ -150,6 +150,18 @@ class DuelingDQNModel(nn.Module):
         A = self.A(x)
         return V, A
 
+class CategoricalDQNModel(nn.Module):
+    def __init__(self, in_features, out_features, is_noisy):
+        super(CategoricalDQNModel, self).__init__()
+        assert isinstance(out_features, (list, tuple)), 'out_features of Categorical DQN model must be a list or tuple, not {}'.format(type(out_features))
+        assert len(out_features) == 2, 'length of out_features must be 2, not {}'.format(len(out_features))
+        self.model = DQNModel(in_features, out_features[0] * out_features[1], is_noisy)
+        self.out_features = out_features
+    
+    def forward(self, x: torch.tensor) -> torch.tensor:
+        x: torch.tensor = self.model(x)
+        x = F.softmax(x.view(-1, self.out_features[1]), 1).view(-1, self.out_features[0], self.out_features[1])
+        return x
 
 class Data:
     def __init__(self, state, action, reward, next_state, done):
@@ -193,6 +205,8 @@ class DQN():
                  multi_step=1, 
                  is_double=False, 
                  is_noisy=False,
+                 is_prioritized=False, 
+                 omega=0.5, 
                  batch_size=64, 
                  memory_capacity=10000, 
                  gamma=0.98, 
@@ -260,7 +274,24 @@ class DQN():
         self.memory_counter += 1
 
     def get_batch(self, batch_size):
-        return self.memory.get(batch_size)
+        if self.is_prioritized:
+            curr_states = torch.tensor(np.array([data.state for data in self.memory.buffer]), dtype=torch.float).to(device)
+            curr_actions = torch.tensor(np.array([data.action for data in self.memory.buffer]), dtype=torch.int64).to(device)
+            reward = torch.tensor(np.array([data.reward for data in self.memory.buffer]), dtype=torch.float).to(device)
+            next_states = torch.tensor(np.array([data.next_state for data in self.memory.buffer]), dtype=torch.float).to(device)
+            dones = torch.tensor(np.array([data.done for data in self.memory.buffer]), dtype=torch.float).to(device)
+            curr_action_values: torch.Tensor = self.calc_eval_action_values(curr_states)
+            next_action_values: torch.Tensor = self.calc_target_action_values(next_states)
+
+            choices = curr_action_values.gather(1, curr_actions.view(len(self.memory.buffer),1)).view(len(self.memory.buffer))
+            targets = reward + torch.max(next_action_values,dim=1).values * self.gamma * (1- dones)
+
+            probability = torch.float_power(torch.abs(targets - choices), self.omega)
+            probability = (probability / torch.sum(probability)).tolist()
+
+            return self.memory.get(batch_size, probability)
+        else:
+            return self.memory.get(batch_size)
     
     def learn(self):
         # update the parameters
@@ -302,6 +333,7 @@ class DQN():
         self.eval_net.load_state_dict(torch.load(file))
         self.target_net.load_state_dict(torch.load(file))
 
+
 class DuelingDQN(DQN):
     def __init__(self, 
                  num_states, 
@@ -310,6 +342,8 @@ class DuelingDQN(DQN):
                  multi_step=1, 
                  is_double=False, 
                  is_noisy=False,
+                 is_prioritized=False, 
+                 omega=0.5, 
                  batch_size=64, 
                  memory_capacity=10000, 
                  gamma=0.98, 
@@ -321,6 +355,8 @@ class DuelingDQN(DQN):
                                          multi_step, 
                                          is_double, 
                                          is_noisy, 
+                                         is_prioritized, 
+                                         omega, 
                                          batch_size, 
                                          memory_capacity, 
                                          gamma, 
@@ -341,60 +377,175 @@ class DuelingDQN(DQN):
         action_values = V + A - A.mean(dim=-1, keepdim=True)
         return action_values
 
-class PrioritizedRelayDQN(DQN):
+
+class CategoricalDQN(DQN):
     def __init__(self, 
                  num_states, 
                  num_actions,
                  env_a_shape,  
-                 omega, 
                  multi_step=1, 
                  is_double=False, 
                  is_noisy=False,
+                 is_prioritized=False, 
+                 omega=0.5, 
                  batch_size=64, 
                  memory_capacity=10000, 
                  gamma=0.98, 
                  q_netwotk_iteration=10, 
-                 saving_iteration=1000):
-        '''
-        omega: a hyper-parameter that determines the shape of distribution.
-        '''
-        super(PrioritizedRelayDQN, self).__init__(num_states, 
-                                                  num_actions, 
-                                                  env_a_shape, 
-                                                  multi_step, 
-                                                  is_double, 
-                                                  is_noisy, 
-                                                  batch_size, 
-                                                  memory_capacity, 
-                                                  gamma, 
-                                                  q_netwotk_iteration, 
-                                                  saving_iteration)
-        self.omega = omega
+                 saving_iteration=1000, 
+                 v_min = -10.0, 
+                 v_max = 10.0, 
+                 atoms_num = 51):
+        self.v_min = v_min
+        self.v_max = v_max
+        self.atoms_num = atoms_num
+        super(CategoricalDQN, self).__init__(num_states, 
+                                             num_actions, 
+                                             env_a_shape, 
+                                             multi_step, 
+                                             is_double, 
+                                             is_noisy, 
+                                             is_prioritized, 
+                                             omega, 
+                                             batch_size, 
+                                             memory_capacity, 
+                                             gamma, 
+                                             q_netwotk_iteration, 
+                                             saving_iteration)
     
-    def get_batch(self, batch_size):
-        curr_states = torch.tensor(np.array([data.state for data in self.memory.buffer]), dtype=torch.float).to(device)
-        curr_actions = torch.tensor(np.array([data.action for data in self.memory.buffer]), dtype=torch.int64).to(device)
-        reward = torch.tensor(np.array([data.reward for data in self.memory.buffer]), dtype=torch.float).to(device)
-        next_states = torch.tensor(np.array([data.next_state for data in self.memory.buffer]), dtype=torch.float).to(device)
-        dones = torch.tensor(np.array([data.done for data in self.memory.buffer]), dtype=torch.float).to(device)
-        curr_action_values: torch.Tensor = self.calc_eval_action_values(curr_states)
+    def generate_net(self):
+        self.eval_net = CategoricalDQNModel(self.num_states, [self.num_actions, self.atoms_num], self.is_noisy).to(device)
+        self.target_net = CategoricalDQNModel(self.num_states, [self.num_actions, self.atoms_num], self.is_noisy).to(device)
+    
+    def choose_action(self, state, EPSILON=1):
+        state = torch.tensor(state, dtype=torch.float).to(device)
+        if random.random() > EPSILON:
+            with torch.no_grad():
+                dist = self.calc_eval_action_values(state)
+                dist = dist.detach()
+                dist = dist.mul(torch.linspace(self.v_min, self.v_max, self.atoms_num).to(device))
+                action = dist.sum(2).max(1)[1].detach()[0].item()
+                action = action if self.env_a_shape ==0 else action.reshape(self.env_a_shape)
+        else:
+            action = np.random.randint(0,self.num_actions)  # int random number
+            action = action if self.env_a_shape == 0 else action.reshape(self.env_a_shape)
+        return action
+    
+    def learn(self):
+        # update the parameters
+        if self.learn_step_counter % self.q_network_iteration ==0:
+            self.target_net.load_state_dict(self.eval_net.state_dict())
+        if self.learn_step_counter % self.saving_iteration == 0:
+            self.save_train_model(self.learn_step_counter)
+
+        self.learn_step_counter += 1
+
+        batch = self.get_batch(self.batch_size)
+
+        curr_states = torch.tensor(np.array([data.state for data in batch]), dtype=torch.float).to(device)
+        curr_actions = torch.tensor(np.array([data.action for data in batch]), dtype=torch.int64).to(device)
+        rewards = torch.tensor(np.array([data.reward for data in batch]), dtype=torch.float).to(device)
+        next_states = torch.tensor(np.array([data.next_state for data in batch]), dtype=torch.float).to(device)
+        dones = torch.tensor(np.array([data.done for data in batch]), dtype=torch.float).to(device)
+        curr_action_values_dist: torch.Tensor = self.calc_eval_action_values(curr_states)
+        curr_actions = curr_actions.view(self.batch_size, 1, 1).expand(self.batch_size, 1, self.atoms_num)
         next_action_values: torch.Tensor = self.calc_target_action_values(next_states)
 
-        choices = curr_action_values.gather(1, curr_actions.view(len(self.memory.buffer),1)).view(len(self.memory.buffer))
-        targets = reward + torch.max(next_action_values,dim=1).values * self.gamma * (1- dones)
+        choices = curr_action_values_dist.gather(1, curr_actions).squeeze(1)
+        choices = choices.detach().clamp_(0.01, 0.99)
+        if not self.is_double:
+            targets = self.projection_distribution(next_states, rewards, dones)
+        else:
+            raise NotImplementedError
+            next_action_values_using_evalnet = self.calc_eval_action_values(next_states)
+            targets = rewards + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(self.batch_size, 1)).view(self.batch_size) * (self.gamma ** self.multi_step) * (1 - dones)
 
-        probability = torch.float_power(torch.abs(targets - choices), self.omega)
-        probability = (probability / torch.sum(probability)).tolist()
+        loss = - (targets * choices.log()).sum(1).mean()
+        loss.requires_grad_(True)
 
-        return self.memory.get(batch_size, probability)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+    
+    def projection_distribution(self, next_state, reward, done):
+        batch_size = next_state.size(0)
+        delta_z = float(self.v_max - self.v_min) / (self.atoms_num - 1)
+        support = torch.linspace(self.v_min, self.v_max, self.atoms_num).to(device)
+
+        next_dist = self.calc_target_action_values(next_state).detach().mul(support)
+        next_action = next_dist.sum(2).max(1)[1]
+        next_action = next_action.unsqueeze(1).unsqueeze(1).expand(batch_size, 1, self.atoms_num)
+        next_dist = next_dist.gather(1, next_action).squeeze(1)
+
+        reward = reward.unsqueeze(1).expand_as(next_dist)
+        done = done.unsqueeze(1).expand_as(next_dist)
+        support = support.unsqueeze(0).expand_as(next_dist)
+
+        Tz = reward + (1 - done) * support * self.gamma
+        Tz = Tz.clamp(min=self.v_min, max=self.v_max)
+        b = (Tz - self.v_min) / delta_z
+        l = b.floor().long()
+        u = b.ceil().long()
+
+        offset = torch.linspace(0, (batch_size - 1) * self.atoms_num, batch_size).long().unsqueeze(1).expand_as(next_dist).to(device)
+
+        proj_dist = torch.zeros_like(next_dist, dtype=torch.float32)
+        proj_dist.view(-1).index_add_(0, (offset + l).view(-1), (next_dist * (u.float() - b)).view(-1))
+        proj_dist.view(-1).index_add_(0, (offset + u).view(-1), (next_dist * (b - l.float())).view(-1))
+        return proj_dist
+        
 
 def main():
     if args.mode == 'dqn':
-        dqn = DQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.multi_step, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
+        dqn = DQN(NUM_STATES, 
+                  NUM_ACTIONS, 
+                  ENV_A_SHAPE, 
+                  multi_step=args.multi_step, 
+                  is_double=args.double, 
+                  is_noisy=args.noisy, 
+                  batch_size=BATCH_SIZE, 
+                  memory_capacity=MEMORY_CAPACITY, 
+                  gamma=GAMMA, 
+                  q_netwotk_iteration=Q_NETWORK_ITERATION, 
+                  saving_iteration=SAVING_IETRATION)
     elif args.mode == 'dueling':
-        dqn = DuelingDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.multi_step, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
+        dqn = DuelingDQN(NUM_STATES, 
+                         NUM_ACTIONS, 
+                         ENV_A_SHAPE, 
+                         multi_step=args.multi_step, 
+                         is_double=args.double, 
+                         is_noisy=args.noisy, 
+                         batch_size=BATCH_SIZE, 
+                         memory_capacity=MEMORY_CAPACITY, 
+                         gamma=GAMMA, 
+                         q_netwotk_iteration=Q_NETWORK_ITERATION, 
+                         saving_iteration=SAVING_IETRATION)
     elif args.mode == 'prioritized_relay':
-        dqn = PrioritizedRelayDQN(NUM_STATES, NUM_ACTIONS, ENV_A_SHAPE, args.omega, args.multi_step, args.double, args.noisy, BATCH_SIZE, MEMORY_CAPACITY, GAMMA, Q_NETWORK_ITERATION, SAVING_IETRATION)
+        dqn = DQN(NUM_STATES, 
+                  NUM_ACTIONS, 
+                  ENV_A_SHAPE, 
+                  multi_step=args.multi_step, 
+                  is_double=args.double, 
+                  is_noisy=args.noisy, 
+                  is_prioritized=True, 
+                  omega=args.omega, 
+                  batch_size=BATCH_SIZE, 
+                  memory_capacity=MEMORY_CAPACITY, 
+                  gamma=GAMMA, 
+                  q_netwotk_iteration=Q_NETWORK_ITERATION, 
+                  saving_iteration=SAVING_IETRATION)
+    elif args.mode == 'categorical':
+        dqn = CategoricalDQN(NUM_STATES, 
+                             NUM_ACTIONS, 
+                             ENV_A_SHAPE, 
+                             multi_step=args.multi_step, 
+                             is_double=args.double, 
+                             is_noisy=args.noisy, 
+                             batch_size=BATCH_SIZE, 
+                             memory_capacity=MEMORY_CAPACITY, 
+                             gamma=GAMMA, 
+                             q_netwotk_iteration=Q_NETWORK_ITERATION, 
+                             saving_iteration=SAVING_IETRATION)
     
     writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
 
