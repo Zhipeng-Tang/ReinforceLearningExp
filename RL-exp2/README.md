@@ -46,7 +46,7 @@
   cd RL-exp2/src
 
   # 下面的命令可能需要几个小时
-  # run.py 是一个训练脚本，一次训练一个任务的四种方法
+  # run.py 是一个训练脚本，一次训练一个任务的四种方法 (dqn, double_dqn, dueling_dqn, double_dueling_dqn)
   # 这里的 gpu_id 是使用的 gpu 的编号，可以先看看哪张卡是空的，默认是 0 (其实不看也行，因为这个任务显存占用很小)
   # 可以同时训练两个任务，用不同的卡，节约时间
   python run.py -e CartPole-v1 -d gpu_id
@@ -76,14 +76,22 @@
   # 建议: 如果你用的是 ubuntu，可以用 kazam? 我不会！
 
   # 下面每条命令都会渲染出相应方法的学习出的最优策略的视频，默认会重复 2000 次，记得录屏！
+  # dqn
   python DQN.py -t -e CartPole-v1 -m dqn --ckpt log/CartPole-v1/dqn/ckpt/final.pth
+  # double dqn
   python DQN.py -t -e CartPole-v1 -m dqn --double --ckpt log/CartPole-v1/double_dqn/ckpt/final.pth
+  # dueling
   python DQN.py -t -e CartPole-v1 -m dueling --ckpt log/CartPole-v1/dueling/ckpt/final.pth
+  # double dueling
   python DQN.py -t -e CartPole-v1 -m dueling --double --ckpt log/CartPole-v1/double_dueling/ckpt/final.pth
 
+  # dqn
   python DQN.py -t -e MountainCar-v0 -m dqn --ckpt log/MountainCar-v0/dqn/ckpt/final.pth
+  # double dqn
   python DQN.py -t -e MountainCar-v0 -m dqn --double --ckpt log/MountainCar-v0/double_dqn/ckpt/final.pth
+  # dueling
   python DQN.py -t -e MountainCar-v0 -m dueling --ckpt log/MountainCar-v0/dueling/ckpt/final.pth
+  # double dueling
   python DQN.py -t -e MountainCar-v0 -m dueling --double --ckpt log/MountainCar-v0/double_dueling/ckpt/final.pth
   ```
 **必做部分完工！！！**
