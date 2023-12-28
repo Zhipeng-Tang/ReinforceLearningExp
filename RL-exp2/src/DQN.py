@@ -457,7 +457,8 @@ class CategoricalDQN(DQN):
         next_action_values: torch.Tensor = self.calc_target_action_values(next_states)
 
         choices = curr_action_values_dist.gather(1, curr_actions).squeeze(1)
-        choices = choices.detach().clamp_(0.01, 0.99)
+        # choices = choices.detach().clamp_(0.01, 0.99)
+        cjoices = choices.clamp_(0.01, 0.99)
         if not self.is_double:
             targets = self.projection_distribution(next_states, rewards, dones)
         else:
@@ -572,6 +573,7 @@ def main():
         return
 
     writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
+    best_reward = -1000000.0
     for i in range(EPISODES):
         print("EPISODE: ", i)
         state, info = env.reset(seed=SEED)
@@ -615,8 +617,8 @@ def main():
                     break
                 
         writer.add_scalar('reward', ep_reward, global_step=i)
-    if not TEST:
-        dqn.save_train_model('final')
+        if ep_reward >= best_reward:
+            dqn.save_train_model('final')
 
 
 if __name__ == '__main__':
