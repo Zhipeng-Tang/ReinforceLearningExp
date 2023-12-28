@@ -35,7 +35,7 @@ if args.env == 'CartPole-v1':
     BATCH_SIZE = 64
     LR = args.lr
     GAMMA = 0.98
-    SAVING_IETRATION = 10000        # 保存Checkpoint的间隔
+    SAVING_IETRATION = 1000         # 保存Checkpoint的间隔
     MEMORY_CAPACITY = 10000         # Memory的容量
     MIN_CAPACITY = 500              # 开始学习的下限
     Q_NETWORK_ITERATION = 10        # 同步target network的间隔
@@ -49,7 +49,7 @@ elif args.env == 'MountainCar-v0':
     BATCH_SIZE = 64
     LR = args.lr
     GAMMA = 0.98
-    SAVING_IETRATION = 10000        # 保存Checkpoint的间隔
+    SAVING_IETRATION = 1000         # 保存Checkpoint的间隔
     MEMORY_CAPACITY = 10000         # Memory的容量
     MIN_CAPACITY = 500              # 开始学习的下限
     Q_NETWORK_ITERATION = 10        # 同步target network的间隔
