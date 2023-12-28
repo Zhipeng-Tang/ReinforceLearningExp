@@ -135,7 +135,17 @@ class DQNModel(nn.Module):
         return x
 
 class DuelingDQNModel(nn.Module):
+    '''
+    Model of Dueling DQN.
+    '''
     def __init__(self, in_features, out_features, is_noisy):
+        '''
+        Init Dueling DQN model. \n
+        Args: 
+            in_features: dim of in_features, dim equals to the number of states for DQN
+            out_features: dim of out_features, dim equals to the number of actions for DQN
+            is_noisy: whether noisy-net or not
+        '''
         super(DuelingDQNModel, self).__init__()
         if not is_noisy:
             self.linear = nn.Linear(in_features, 512)
@@ -176,12 +186,26 @@ class Data:
 
 
 class Memory:
+    '''
+    Experience relay of DQN.
+    '''
     def __init__(self, capacity):
+        '''
+        Init momory. \n
+        Args: 
+            capacity: max capacity of memory
+        '''
         self.buffer = collections.deque(maxlen=capacity)
         self.capacity = capacity
 
     def set(self, data, index):
-        # TODO
+        '''
+        Put data into memory. \n
+        If memory is not full, just append data into memory. If memory is full, let memory[index]=data, just remove the oldest data. \n
+        Args: 
+            data: the data you want to put into memory
+            index: the index of the oldest data
+        '''
         if len(self.buffer) < self.capacity:
             self.buffer.append(data)
         else:
@@ -190,9 +214,11 @@ class Memory:
     def get(self, batch_size, probability=None):
         '''
         Choose batch_size elements from buffer according to probability. \n
-        If probability is not specified, the choices are made with equal probability.
+        If probability is not specified, the choices are made with equal probability. \n
+        Args:
+            batch_size: the number of data you want to get
+            probability: the probability of each element to be chosen
         '''
-        # TODO
         if probability is not None:
             batch = random.choices(self.buffer, probability, k=batch_size)
         else:
