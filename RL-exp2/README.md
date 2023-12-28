@@ -1,6 +1,6 @@
 # README
 
-## environment
+## 环境
 - 创建 conda 虚拟环境: 
   ```bash
   conda create -n rl python=3.9 -y
