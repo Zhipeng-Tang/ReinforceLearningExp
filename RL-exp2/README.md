@@ -1,25 +1,32 @@
 # README
 
 ## environment
-- create a conda env: 
+- 创建 conda 虚拟环境: 
   ```bash
   conda create -n rl python=3.9 -y
   conda activate rl
   ```
-- install Gymnasium: 
+- 安装 Gymnasium: 
   ```bash
   git clone https://github.com/Farama-Foundation/Gymnasium.git
   cd Gymnasium
   python setup.py develop
   ```
-- install torch: 
+- 安装 torch: 
   ```bash
-  # This step may take a few minutes ...
+  # 可能要花几分钟...
   conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 -c pytorch -y
+  # 如果没有 cuda
+  conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch -y
+  # 如果没有驱动，请自行解决
   ```
-- install tensorboard: 
+- 安装 tensorboard: 
   ```bash
   pip install tensorboard
+  ```
+- 安装实验环境
+  ```bash
+  pip install gymnasium[classic-control]
   ```
 
 ## DQN
