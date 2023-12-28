@@ -21,10 +21,13 @@ parser.add_argument('--epsilon_start', type=float, default=0.5, help='epsilon st
 parser.add_argument('--omega', type=float, default=0.5, help='a hyper-parameter of prioritized relay dqn, default is 0.5')
 parser.add_argument('--dynamic_epsilon', action='store_true', help='use dynamic epsilon or not')
 parser.add_argument('--multi_step', type=int, default=1, help='how many steps for multi-step learning, default is 1')
+parser.add_argument('--ckpt', type=str, help='path of testing checkpoint')
 args = parser.parse_args()
 assert args.env in ['CartPole-v1', 'MountainCar-v0'], 'env: {} does not exist!'.format(args.env)
 assert args.mode in ['dqn', 'dueling', 'prioritized_relay', 'categorical'], 'mode: {} does not exist!'.format(args.mode)
 assert args.multi_step >= 1, 'multi_step must be greater than or equal to 1'
+if args.test:
+    assert os.path.exists(args.ckpt), 'checkpoint {} not exist!'.format(args.ckpt)
 
 # hyper-parameters
 if args.env == 'CartPole-v1':
@@ -32,7 +35,7 @@ if args.env == 'CartPole-v1':
     BATCH_SIZE = 64
     LR = args.lr
     GAMMA = 0.98
-    SAVING_IETRATION = 1000         # 保存Checkpoint的间隔
+    SAVING_IETRATION = 10000        # 保存Checkpoint的间隔
     MEMORY_CAPACITY = 10000         # Memory的容量
     MIN_CAPACITY = 500              # 开始学习的下限
     Q_NETWORK_ITERATION = 10        # 同步target network的间隔
@@ -46,7 +49,7 @@ elif args.env == 'MountainCar-v0':
     BATCH_SIZE = 64
     LR = args.lr
     GAMMA = 0.98
-    SAVING_IETRATION = 1000         # 保存Checkpoint的间隔
+    SAVING_IETRATION = 10000        # 保存Checkpoint的间隔
     MEMORY_CAPACITY = 10000         # Memory的容量
     MIN_CAPACITY = 500              # 开始学习的下限
     Q_NETWORK_ITERATION = 10        # 同步target network的间隔
@@ -62,7 +65,7 @@ dirname = 'double_{}'.format(args.mode) if args.double else args.mode
 dirname = 'noisy_{}'.format(dirname) if args.noisy else dirname
 dirname = 'multi_step_{}_{}'.format(args.multi_step, dirname) if args.multi_step > 1 else dirname
 SAVE_PATH_PREFIX = '{}/{}/{}/'.format(args.logdir, args.env, dirname)
-MODEL_PATH = '{}/{}/{}/ckpt/final.pth'.format(args.logdir, args.env, dirname)
+MODEL_PATH = args.ckpt
 
 
 env = gym.make(args.env, render_mode="human" if TEST else None)
@@ -80,7 +83,7 @@ os.makedirs(f"{SAVE_PATH_PREFIX}/ckpt", exist_ok=True)
 
 NUM_ACTIONS = env.action_space.n  # 2
 NUM_STATES = env.observation_space.shape[0]  # 4
-ENV_A_SHAPE = 0 if np.issubdtype(type(env.action_space.sample()), int) else env.action_space.sample().shape  # 0, to confirm the shape
+ENV_A_SHAPE = 0 if np.issubdtype(type(env.action_space.sample()), np.signedinteger) else env.action_space.sample().shape  # 0, to confirm the shape
 
 class NoisyLinear(nn.Module):
     def __init__(self, in_features, out_features, sigma_init=0.017):
@@ -548,11 +551,27 @@ def main():
                              gamma=GAMMA, 
                              q_netwotk_iteration=Q_NETWORK_ITERATION, 
                              saving_iteration=SAVING_IETRATION)
-    
-    writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
-
+    # import pdb; pdb.set_trace()
     if TEST:
         dqn.load_net(MODEL_PATH)
+        for i in range(EPISODES):
+            print("EPISODE: ", i)
+            state, info = env.reset(seed=SEED)
+            env.render()
+            ep_reward = 0
+            while True:
+                action = dqn.choose_action(state=state, EPSILON=0)  # choose best action
+                next_state, reward, terminated, truncated, info = env.step(action)  # observe next state and reward
+                done = terminated or truncated
+                env.render()
+                ep_reward += reward
+                state = next_state
+                if done:
+                    print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
+                    break
+        return
+
+    writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
     for i in range(EPISODES):
         print("EPISODE: ", i)
         state, info = env.reset(seed=SEED)
@@ -587,16 +606,12 @@ def main():
                 dqn.store_transition([data_list[i % args.multi_step] for i in range(counter - args.multi_step, counter)])
                 ep_reward += reward
                 state = next_state
-                # if TEST:
-                #     env.render()
+
                 if dqn.memory_counter >= MIN_CAPACITY and not TEST:
                     dqn.learn()
                     if done:
                         print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
-                if done:
-                    if TEST:
-                        print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
-                    break
+                
         writer.add_scalar('reward', ep_reward, global_step=i)
     if not TEST:
         dqn.save_train_model('final')
