@@ -573,7 +573,6 @@ def main():
         return
 
     writer = SummaryWriter(f'{SAVE_PATH_PREFIX}')
-    best_reward = -1000000.0
     for i in range(EPISODES):
         print("EPISODE: ", i)
         state, info = env.reset(seed=SEED)
@@ -617,8 +616,29 @@ def main():
                     break
                 
         writer.add_scalar('reward', ep_reward, global_step=i)
+
+    best_reward = -1000000.0
+    assert len(list(filter(lambda x: 'final' not in x, os.listdir(f'{SAVE_PATH_PREFIX}/ckpt/')))) >= 1, 'there is not model file in {}/ckpt/'.format(SAVE_PATH_PREFIX)
+    best_ckpt = f'{SAVE_PATH_PREFIX}/ckpt/0.pth'
+    for ckpt in list(filter(lambda x: 'final' not in x, os.listdir(f'{SAVE_PATH_PREFIX}/ckpt/'))):
+        dqn.load_net(f'{SAVE_PATH_PREFIX}/ckpt/{ckpt}')
+        state, info = env.reset(seed=SEED)
+        ep_reward = 0
+        while True:
+            action = dqn.choose_action(state=state, EPSILON=0)  # choose best action
+            next_state, reward, terminated, truncated, info = env.step(action)  # observe next state and reward
+            done = terminated or truncated
+            env.render()
+            ep_reward += reward
+            state = next_state
+            if done:
+                break
         if ep_reward >= best_reward:
-            dqn.save_train_model('final')
+            best_reward = ep_reward
+            best_ckpt = f'{SAVE_PATH_PREFIX}/ckpt/{ckpt}'
+    os.system('cp {} {}/ckpt/final.pth'.format(best_ckpt, SAVE_PATH_PREFIX))
+    print('best epoch is {}, and the reward is {}.'.format(best_ckpt, best_reward))
+        
 
 
 if __name__ == '__main__':
