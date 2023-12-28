@@ -47,7 +47,8 @@
 
   # 下面的命令可能需要几个小时
   # run.py 是一个训练脚本，一次训练一个任务的四种方法 (dqn, double_dqn, dueling_dqn, double_dueling_dqn)
-  # 这里的 gpu_id 是使用的 gpu 的编号，可以先看看哪张卡是空的，默认是 0 (其实不看也行，因为这个任务显存占用很小)
+  # -e 是环境参数，CartPole-v1 或 MountainCar-v0
+  # -d 参数，这里的 gpu_id 是使用的 gpu 的编号，可以先看看哪张卡是空的，默认是 0 (其实不看也行，因为这个任务显存占用很小)
   # 可以同时训练两个任务，用不同的卡，节约时间
   python run.py -e CartPole-v1 -d gpu_id
   # 可以用 tensorboard 实时看一下运行情况
