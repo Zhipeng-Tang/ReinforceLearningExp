@@ -18,7 +18,7 @@
   conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 -c pytorch -y
   # 如果没有 cuda
   conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch -y
-  # 如果没有驱动，请自行解决
+  # 如果没有驱动，sorry，请自行解决
   ```
 - 安装 tensorboard: 
   ```bash
