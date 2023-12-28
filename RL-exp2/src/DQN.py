@@ -611,6 +611,8 @@ def main():
                     dqn.learn()
                     if done:
                         print("episode: {} , the episode reward is {}".format(i, round(ep_reward, 3)))
+                if done:
+                    break
                 
         writer.add_scalar('reward', ep_reward, global_step=i)
     if not TEST:
