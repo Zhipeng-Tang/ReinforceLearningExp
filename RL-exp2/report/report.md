@@ -84,11 +84,11 @@
 #### 2.2.1 原理
 - DQN target: 
   $$
-  {\rm target}(s_t) = r_t + \gamma Q_{\phi ^ -}(s_{t+1}, \argmax_{a'}Q_{\phi ^ -}(s_{t+1}, a'))
+  {\rm target}(s_t) = r_t + \gamma Q_{\phi ^ -}(s_{t+1}, \arg\max_{a'}Q_{\phi ^ -}(s_{t+1}, a'))
   $$
 - Double DQN target: 
   $$
-  {\rm target}(s_t) = r_t + \gamma Q_{\phi ^ -}(s_{t+1}, \argmax_{a'}Q_{\phi}(s_{t+1}, a'))
+  {\rm target}(s_t) = r_t + \gamma Q_{\phi ^ -}(s_{t+1}, \arg\max_{a'}Q_{\phi}(s_{t+1}, a'))
   $$
 
 #### 2.2.2 实现
@@ -115,7 +115,7 @@ else:
   $$
   Q(s,a) = V(s) + A(s,a) - \frac{1}{\mathbb{A}} \sum_{a \in \mathbb{A}} A(s,a)
   $$
-  ![dueling](./fig/dueling.png)
+  <img src="./fig/dueling.png" alt="dueling" style="zoom:25%;" />
 
 #### 2.3.2 实现
 - 主要更改网络结构
