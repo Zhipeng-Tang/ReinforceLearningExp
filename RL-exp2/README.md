@@ -28,6 +28,10 @@
   ```bash
   pip install gymnasium[classic-control]
   ```
+- 安装 matplotlib
+  ```bash
+  pip install matplotlib
+  ```
 
 ## DQN
 - 结合实验文档看 (RL-exp2/docu/强化学习 Lab 2.pdf)
