@@ -373,3 +373,47 @@ else:
   </center>
 - 并不是步数越大越好，比如 CartPole-v1 multi_step=6 表现很差
 - Multi-step learning 对稳定性和收敛速度有明显的提升，比如 CartPole-v1 multi_step=2 和 MountainCar-v0 multi_step=2,4,6 表现都非常好
+
+## 4 附录
+### 4.1 dynamic epsilon
+- 使用动态的 epsilon，对于第 $i$ 个 episode，epsilon 有以下公式确定：
+  $$
+  {\rm epsilon} = 0.95 * (1 - \frac{i}{0.8 * {\rm EPISODES}})
+  $$
+- 其中 $\rm EPISODES$ 是 episode 的总数。这样，随着训练进行 epsilon 越来越小，知道后面会小于 $0$，也就是不会再取探索
+- reward 曲线同样是经过平滑处理的：
+  <center class='half'>
+  <figure>
+    <img src="fig/CartPole-v1_dynamic_epsilon.png" width=400/>
+    <img src="fig/CartPole-v1.png" width=400/>
+    <center><figcaption>CartPole-v1，左图是 dynamic epsilon，右图是 static epsilon</figcaption></center>
+  </figure>
+  </center>
+  <center class='half'>
+  <figure>
+    <img src="fig/MountainCar-v0_dynamic_epsilon.png" width=400/>
+    <img src="fig/MountainCar-v0.png" width=400/>
+    <center><figcaption>MountainCar-v0，左图是 dynamic epsilon，右图是 static epsilon</figcaption></center>
+  </figure>
+  </center>
+- 稳定性有所增加，这应该与后面 epsilon 越来越小有关
+
+### 4.2 lr
+- 由于波动太大，因此尝试一下更小的 lr
+- MountainCar-v0 使用 lr=0.0002，CartPole-v1 使用 lr=0.0001
+- reward 曲线同样是经过平滑处理的：
+  <center class='half'>
+  <figure>
+    <img src="fig/CartPole-v1_lower_lr.png" width=400/>
+    <img src="fig/CartPole-v1.png" width=400/>
+    <center><figcaption>CartPole-v1，左图是 lr=0.0001，右图是 lr=0.00025</figcaption></center>
+  </figure>
+  </center>
+  <center class='half'>
+  <figure>
+    <img src="fig/MountainCar-v0_lower_lr.png" width=400/>
+    <img src="fig/MountainCar-v0.png" width=400/>
+    <center><figcaption>MountainCar-v0，左图是 lr=0.0002，右图是 lr=0.00025</figcaption></center>
+  </figure>
+  </center>
+- 波动好像并没有变小，反而可能会导致训练不动
