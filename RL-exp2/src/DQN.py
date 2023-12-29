@@ -87,6 +87,14 @@ ENV_A_SHAPE = 0 if np.issubdtype(type(env.action_space.sample()), np.signedinteg
 
 class NoisyLinear(nn.Module):
     def __init__(self, in_features, out_features, sigma_init=0.017):
+        '''
+        Init noisy leanear layer.
+
+        Args: 
+            in_features: dim of in_features. 
+            out_features: dim of out_features. 
+            sigma_init: a parameter for initing noisy parameters. 
+        '''
         super(NoisyLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -103,6 +111,9 @@ class NoisyLinear(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
+        '''
+        Init parameters.
+        '''
         mu_range = (3 / self.in_features) ** 0.5
         self.weight_mu.data.uniform_(-mu_range, mu_range)
         self.weight_sigma.data.fill_(self.sigma_init / (self.in_features ** 0.5))
@@ -120,6 +131,14 @@ class NoisyLinear(nn.Module):
 
 class DQNModel(nn.Module):
     def __init__(self, in_features, out_features, is_noisy=False):
+        '''
+        Init DQN model. 
+
+        Args: 
+            in_features: dim of in_features, which should be equal to the number of states. 
+            out_features: dim of out_features, which should be equal to the number of actions. 
+            is_noisy: use NoisyNet or not. 
+        '''
         super(DQNModel, self).__init__()
         if not is_noisy:
             self.linear1 = nn.Linear(in_features, 512)
@@ -140,11 +159,12 @@ class DuelingDQNModel(nn.Module):
     '''
     def __init__(self, in_features, out_features, is_noisy):
         '''
-        Init Dueling DQN model. \n
+        Init Dueling DQN model. 
+
         Args: 
-            in_features: dim of in_features, dim equals to the number of states for DQN
-            out_features: dim of out_features, dim equals to the number of actions for DQN
-            is_noisy: whether noisy-net or not
+            in_features: dim of in_features, dim equals to the number of states for DQN. 
+            out_features: dim of out_features, dim equals to the number of actions for DQN. 
+            is_noisy: whether noisy-net or not. 
         '''
         super(DuelingDQNModel, self).__init__()
         if not is_noisy:
@@ -191,20 +211,23 @@ class Memory:
     '''
     def __init__(self, capacity):
         '''
-        Init momory. \n
+        Init momory. 
+
         Args: 
-            capacity: max capacity of memory
+            capacity: max capacity of memory. 
         '''
         self.buffer = collections.deque(maxlen=capacity)
         self.capacity = capacity
 
     def set(self, data, index):
         '''
-        Put data into memory. \n
-        If memory is not full, just append data into memory. If memory is full, let memory[index]=data, just remove the oldest data. \n
+        Put data into memory. 
+
+        If memory is not full, just append data into memory. If memory is full, let memory[index]=data, just remove the oldest data. 
+
         Args: 
-            data: the data you want to put into memory
-            index: the index of the oldest data
+            data: the data you want to put into memory. 
+            index: the index of the oldest data.
         '''
         if len(self.buffer) < self.capacity:
             self.buffer.append(data)
@@ -213,11 +236,13 @@ class Memory:
     
     def get(self, batch_size, probability=None):
         '''
-        Choose batch_size elements from buffer according to probability. \n
-        If probability is not specified, the choices are made with equal probability. \n
+        Choose batch_size elements from buffer according to probability. 
+
+        If probability is not specified, the choices are made with equal probability. 
+
         Args:
-            batch_size: the number of data you want to get
-            probability: the probability of each element to be chosen
+            batch_size: the number of data you want to get. 
+            probability: the probability of each element to be chosen. 
         '''
         if probability is not None:
             batch = random.choices(self.buffer, probability, k=batch_size)
@@ -298,6 +323,12 @@ class DQN():
         return action
 
     def store_transition(self, data):
+        '''
+        Store data to the memory of DQN. 
+        
+        Args:
+            data: a list of Data, the length of the list should be equal to multi_step. 
+        '''
         length = len(data)
         assert self.multi_step == length, 'multi_step is {}, but the length of data is {}, not match!'.format(self.multi_step, length)
         reward = np.sum(np.array([d.reward for d in data]) * np.array([self.gamma ** i for i in range(length)]))
@@ -305,6 +336,12 @@ class DQN():
         self.memory_counter += 1
 
     def get_batch(self, batch_size):
+        '''
+        Get a batch of data to train network. If is_prioritized is true, calculate the TD error as probability to sample data. If is_priortized is not true, just sample data uniformly.
+
+        Args: 
+            batch_size: batch size. 
+        '''
         if self.is_prioritized:
             curr_states = torch.tensor(np.array([data.state for data in self.memory.buffer]), dtype=torch.float).to(device)
             curr_actions = torch.tensor(np.array([data.action for data in self.memory.buffer]), dtype=torch.int64).to(device)
