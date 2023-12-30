@@ -332,6 +332,11 @@ else:
       return batch
   ```
 
+### 2.7 Categorical DQN
+#### 2.7.1 原理和实现
+- 主要想法是去近似 reward 的分布，而不是期望
+- 具体实现参见[源码](https://github.com/Zhipeng-Tang/ReinforceLearningExp/blob/master/RL-exp2/src/DQN.py)中的 `CategoricalDQN`
+
 ## 3 实验结果
 ### 3.1 DQN, DDQN, Dueling DQN and Dueling DDQN
 - 由于 reward 曲线波动过大，将多种方法的曲线展示在一张图会看不清，因此下面展示的结果是平滑过后的结果：
@@ -339,7 +344,7 @@ else:
   <figure>
     <img src="fig/CartPole-v1.png" title="CartPole-v1" width=400/>
     <img src="fig/MountainCar-v0.png" title="MountainCar-v0" width=400/>
-    <center><figcaption>左图是 CartPole-v1，右图是 MountainCar-v0</figcaption></center>
+    <center><figcaption>上图是 CartPole-v1，下图是 MountainCar-v0</figcaption></center>
   </figure>
   </center>
   未经平滑处理的 reward 曲线参见 [CartPole-v1](https://github.com/Zhipeng-Tang/ReinforceLearningExp/blob/master/RL-exp2/report/fig/CartPole-v1_no_smooth.png) 和 [MountainCar-v0](https://github.com/Zhipeng-Tang/ReinforceLearningExp/blob/master/RL-exp2/report/fig/MountainCar-v0_no_smooth.png)
@@ -355,12 +360,13 @@ else:
   <figure>
     <img src="fig/CartPole-v1_extension.png" title="CartPole-v1_extension" width=400/>
     <img src="fig/MountainCar-v0_extension.png" title="MountainCar-v0_extension" width=400/>
-    <center><figcaption>左图是 CartPole-v1，右图是 MountainCar-v0</figcaption></center>
+    <center><figcaption>上图是 CartPole-v1，下图是 MountainCar-v0</figcaption></center>
   </figure>
   </center>
 - NoisyNet 能最快到达最好的效果，并且波动最小 (尤其是在 MountainCar-v0 环境下)
 - Multi-step learning 也比原始的 dqn 效果更好
-- Prioritized relay 的曲线看起来不好，但是学到的最好策略的 reward 跟其它方法相同
+- Prioritized relay 的曲线看起来效果不好，但是学到的最好策略的 reward 跟其它方法相同
+- categorical dqn 完全没训练起来
 
 #### 3.2.1 Multi-step learning
 - 单独比较一下 multi_step 不同步数的性能，这里 dqn 相当于是 multi_step=1。同样的，reward 曲线同样是平滑后的结果：
@@ -368,7 +374,7 @@ else:
   <figure>
     <img src="fig/CartPole-v1_multi_step.png" title="CartPole-v1_multi_step" width=400/>
     <img src="fig/MountainCar-v0_multi_step.png" title="MountainCar-v0_multi_step" width=400/>
-    <center><figcaption>左图是 CartPole-v1，右图是 MountainCar-v0</figcaption></center>
+    <center><figcaption>上图是 CartPole-v1，下图是 MountainCar-v0</figcaption></center>
   </figure>
   </center>
 - 并不是步数越大越好，比如 CartPole-v1 multi_step=6 表现很差
@@ -386,14 +392,14 @@ else:
   <figure>
     <img src="fig/CartPole-v1_dynamic_epsilon.png" width=400/>
     <img src="fig/CartPole-v1.png" width=400/>
-    <center><figcaption>CartPole-v1，左图是 dynamic epsilon，右图是 static epsilon</figcaption></center>
+    <center><figcaption>CartPole-v1，上图是 dynamic epsilon，下图是 static epsilon</figcaption></center>
   </figure>
   </center>
   <center class='half'>
   <figure>
     <img src="fig/MountainCar-v0_dynamic_epsilon.png" width=400/>
     <img src="fig/MountainCar-v0.png" width=400/>
-    <center><figcaption>MountainCar-v0，左图是 dynamic epsilon，右图是 static epsilon</figcaption></center>
+    <center><figcaption>MountainCar-v0，上图是 dynamic epsilon，下图是 static epsilon</figcaption></center>
   </figure>
   </center>
 - 稳定性有所增加，这应该与后面 epsilon 越来越小有关
@@ -406,14 +412,14 @@ else:
   <figure>
     <img src="fig/CartPole-v1_lower_lr.png" width=400/>
     <img src="fig/CartPole-v1.png" width=400/>
-    <center><figcaption>CartPole-v1，左图是 lr=0.0001，右图是 lr=0.00025</figcaption></center>
+    <center><figcaption>CartPole-v1，上图是 lr=0.0001，下图是 lr=0.00025</figcaption></center>
   </figure>
   </center>
   <center class='half'>
   <figure>
     <img src="fig/MountainCar-v0_lower_lr.png" width=400/>
     <img src="fig/MountainCar-v0.png" width=400/>
-    <center><figcaption>MountainCar-v0，左图是 lr=0.0002，右图是 lr=0.00025</figcaption></center>
+    <center><figcaption>MountainCar-v0，上图是 lr=0.0002，下图是 lr=0.00025</figcaption></center>
   </figure>
   </center>
 - 波动好像并没有变小，反而可能会导致训练不动
