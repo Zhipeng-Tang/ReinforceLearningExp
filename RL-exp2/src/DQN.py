@@ -521,13 +521,11 @@ class CategoricalDQN(DQN):
 
         choices = curr_action_values_dist.gather(1, curr_actions).squeeze(1)
         # choices = choices.detach().clamp_(0.01, 0.99)
-        cjoices = choices.clamp_(0.01, 0.99)
+        choices = choices.clamp_(0.01, 0.99)
         if not self.is_double:
             targets = self.projection_distribution(next_states, rewards, dones)
         else:
             raise NotImplementedError
-            next_action_values_using_evalnet = self.calc_eval_action_values(next_states)
-            targets = rewards + next_action_values.gather(1, torch.argmax(next_action_values_using_evalnet,dim=1).view(self.batch_size, 1)).view(self.batch_size) * (self.gamma ** self.multi_step) * (1 - dones)
 
         loss = - (targets * choices.log()).sum(1).mean()
         loss.requires_grad_(True)
