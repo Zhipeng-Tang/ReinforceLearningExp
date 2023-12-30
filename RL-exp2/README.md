@@ -103,6 +103,7 @@
   python DQN.py -t -e MountainCar-v0 -m dueling --double --ckpt log/MountainCar-v0/double_dueling/ckpt/final.pth
   ```
 **必做部分完工！！！**
+必做部分的源码参见[必做](./src/DQN_neccessary.py)
 
 ## DQN 扩展
 ### multi_step learning
