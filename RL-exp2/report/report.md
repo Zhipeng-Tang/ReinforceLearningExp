@@ -10,8 +10,8 @@
 源码参见 [DQN](https://github.com/Zhipeng-Tang/ReinforceLearningExp/blob/master/RL-exp2/src/DQN.py)
 ### 2.1 DQN
 #### 2.1.1 算法原理
-- step1: 在环境中采取行动 $a_i$，然后将 $(s_i, a_i, s_{i+1}, r_i)$ 插入 Experience Relay
-- step2: 如果 Experience Relay 中有足够的数据，则随机采样 $(s_i, a_i, s_{i+1}, r_i)$ 进行训练
+- step1: 在环境中采取行动 $a_i$，然后将 $(s_i, a_i, s_{i+1}, r_i)$ 插入 Experience Replay
+- step2: 如果 Experience Replay 中有足够的数据，则随机采样 $(s_i, a_i, s_{i+1}, r_i)$ 进行训练
 - step3: ${\rm target}(s_i) = r_i + \gamma {\rm max}_{a'}Q_{\phi^-}(s_{i+1}, a')$
 - step4: $\phi \leftarrow \phi + \alpha ({\rm target(s_i) - Q_{\phi}(s_i,a_i)}) \frac{{\rm d} Q_{\phi}}{{\rm d} \phi}$
 - step5: 每训练 N 步, 令 $\phi^- = \phi$
@@ -165,7 +165,7 @@ else:
   $$
 
 #### 2.4.2 实现
-- 主要更改存入 Experience Relay 的数据，将 $(s_i, a_i, s_{i+1}, r_i)$ 更改为 $(s_i, a_i, s_{i+n}, \sum_{k=0}^{n-1} \gamma^{k} r_{i+k})$
+- 主要更改存入 Experience Replay 的数据，将 $(s_i, a_i, s_{i+1}, r_i)$ 更改为 $(s_i, a_i, s_{i+n}, \sum_{k=0}^{n-1} \gamma^{k} r_{i+k})$
   ```python
   # 这是 DQN 的成员函数，将数据存入 memory 中
   def store_transition(self, data):
@@ -273,12 +273,12 @@ else:
 
 ### 2.6 Prioritized relay
 #### 2.6.1 原理
-- DQN 从 Experience Relay 中均匀随机采样。理想情况下，我们希望更频繁地采样能学到更多东西的数据
+- DQN 从 Experience Replay 中均匀随机采样。理想情况下，我们希望更频繁地采样能学到更多东西的数据
 - Prioritized relay 根据绝对 TD 误差决定的概率 $p_t$ 进行采样
   $$
   p_t \propto |r_t + \gamma \max_{a'}Q_{\phi ^ -}(s_{t+1}.a') - Q_{\phi}(s_t,a_t)|^{\omega}
   $$
-  其中，$\omega$ 是决定分布形状的超参数。新的数据存入 Experience Relay 时具有最大的概率，这提供了对新数据的偏好。
+  其中，$\omega$ 是决定分布形状的超参数。新的数据存入 Experience Replay 时具有最大的概率，这提供了对新数据的偏好。
 #### 2.6.2 实现
 - 只需要修改采样的方式
   ```python
