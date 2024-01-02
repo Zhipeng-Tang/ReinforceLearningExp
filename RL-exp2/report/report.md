@@ -18,7 +18,7 @@
 - 重复上述步骤
 
 #### 2.1.2 实现
-- 首先是 Expericence Relay 的实现
+- 首先是 Experience Replay 的实现
   ```python
   class Memory:
     def __init__(self, capacity):
